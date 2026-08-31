@@ -1,4 +1,5 @@
 .build/
 DropStation.app/
+dist/
 .DS_Store
 .mimosa/

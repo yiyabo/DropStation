@@ -15,13 +15,32 @@
 - macOS 13+
 - **辅助功能权限**（系统设置 → 隐私与安全性 → 辅助功能）：晃动检测与全局快捷键依赖它。未授权时菜单栏菜单里会出现"需要辅助功能权限…"引导项。
 
-## 构建
+## 安装
+
+### 方式一：直接下载 DMG
+
+到 [Releases](https://github.com/yiyabo/DropStation/releases) 页面下载最新的 `DropStation-x.x.x.dmg`，打开后把 DropStation 图标拖入 Applications 文件夹即可完成安装。
+
+> 应用没有 Developer ID 签名，经浏览器下载后首次打开可能被 Gatekeeper 拦截：到「系统设置 → 隐私与安全性」点击「仍要打开」即可；也可以在终端执行 `xattr -d com.apple.quarantine /Applications/DropStation.app` 解除隔离。
+> 安装后还需要在「系统设置 → 隐私与安全性 → 辅助功能」中为 DropStation 授权。
+
+### 方式二：从源码构建
+
+```bash
+git clone https://github.com/yiyabo/DropStation.git
+cd DropStation
+./create-dmg.sh
+```
+
+`create-dmg.sh` 会编译、打包并生成 `dist/DropStation-<版本>.dmg`，双击挂载后把应用拖入 Applications 即可。首次运行时 macOS 会请求"控制 Finder"的授权，用于设置安装界面的图标布局与背景（拒绝也不影响 DMG 的生成与使用）。
+
+只要应用本体的话：
 
 ```bash
 ./build-app.sh
 ```
 
-脚本会完成编译（`swift build -c release`）、生成应用图标（需要 `pip install Pillow`）、组装并签名 `DropStation.app`。构建完成后直接打开 `DropStation.app` 即可，也可以拖进"应用程序"目录。
+脚本会完成编译（`swift build -c release`）、生成应用图标（需要 `pip install Pillow`）、组装并签名 `DropStation.app`。
 
 > 提示：默认使用 ad-hoc 签名，每次重新构建后 macOS 会视为新程序，需要在辅助功能里重新勾选。若在"钥匙串访问 → 证书助理"里创建一个名为 `DropStation Development` 的代码签名证书，脚本会自动使用它，重新构建后授权保持有效。
 
