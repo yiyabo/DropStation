@@ -1,0 +1,4 @@
+.build/
+DropStation.app/
+.DS_Store
+.mimosa/
