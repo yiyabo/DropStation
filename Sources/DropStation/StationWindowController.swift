@@ -49,8 +49,8 @@ final class StationWindowController: NSWindowController {
         window?.isVisible == true
     }
 
-    func add(fileURL: URL) {
-        stationView.add(fileURL: fileURL)
+    func add(fileURLs: [URL]) {
+        stationView.add(fileURLs: fileURLs)
     }
 
     func show(near point: NSPoint) {

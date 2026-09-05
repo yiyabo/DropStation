@@ -30,9 +30,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         keyboardShortcuts.start()
 
-        shakeDetector.onShake = { [weak self] fileURL in
-            self?.station.add(fileURL: fileURL)
-            self?.station.show(near: NSEvent.mouseLocation)
+        shakeDetector.onShake = { [weak self] fileURLs in
+            guard let self else { return }
+            self.station.add(fileURLs: fileURLs)
+            self.station.show(near: NSEvent.mouseLocation)
         }
 
         shakeDetector.start()

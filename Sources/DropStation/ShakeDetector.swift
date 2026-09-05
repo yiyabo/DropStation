@@ -2,7 +2,7 @@ import AppKit
 
 @MainActor
 final class ShakeDetector {
-    var onShake: ((URL) -> Void)?
+    var onShake: (([URL]) -> Void)?
 
     private var globalMonitor: Any?
     private var localMonitor: Any?
@@ -121,18 +121,19 @@ final class ShakeDetector {
     }
 
     private func trigger() {
-        guard let fileURL = draggedFileURL else { return }
+        let fileURLs = draggedFileURLs
+        guard !fileURLs.isEmpty else { return }
         hasTriggered = true
-        onShake?(fileURL)
+        onShake?(fileURLs)
     }
 
-    private var draggedFileURL: URL? {
+    private var draggedFileURLs: [URL] {
         let pasteboard = NSPasteboard(name: .drag)
         let objects = pasteboard.readObjects(
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
         ) ?? []
-        return objects.compactMap { ($0 as? NSURL)?.filePathURL }.first
+        return objects.compactMap { ($0 as? NSURL)?.filePathURL }
     }
 
     private func reset() {

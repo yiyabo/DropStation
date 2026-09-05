@@ -10,6 +10,9 @@ final class StationView: NSView, NSDraggingSource {
     private var fileSizeCache: [URL: String] = [:]
     private var pressedIndex: Int?
     private var pressPoint = NSPoint.zero
+    private var activeDragIndex: Int?
+    private var isMoveMode = false
+    private var isToggleHovered = false
     private var hoveredIndex: Int?
     private var isCloseHovered = false
     private var didStartDrag = false
@@ -51,6 +54,8 @@ final class StationView: NSView, NSDraggingSource {
         NSBezierPath(ovalIn: closeRect).fill()
         drawText("×", at: NSPoint(x: closeRect.minX + 5.5, y: closeRect.minY + 1), font: .systemFont(ofSize: 16, weight: .medium), color: NSColor.white.withAlphaComponent(0.82))
 
+        drawMoveToggle()
+
         if files.isEmpty {
             let dropRect = NSRect(x: 20, y: 88, width: bounds.width - 40, height: bounds.height - 110)
             NSColor.white.withAlphaComponent(0.055).setFill()
@@ -89,21 +94,34 @@ final class StationView: NSView, NSDraggingSource {
         let point = convert(event.locationInWindow, from: nil)
         let newHoveredIndex = files.indices.first { rowRect(for: $0).contains(point) }
         let newCloseHovered = closeRect.contains(point)
-        guard newHoveredIndex != hoveredIndex || newCloseHovered != isCloseHovered else { return }
+        let newToggleHovered = moveToggleRect.contains(point)
+        guard newHoveredIndex != hoveredIndex
+                || newCloseHovered != isCloseHovered
+                || newToggleHovered != isToggleHovered else { return }
         hoveredIndex = newHoveredIndex
         isCloseHovered = newCloseHovered
+        isToggleHovered = newToggleHovered
         needsDisplay = true
     }
 
     override func mouseExited(with event: NSEvent) {
         hoveredIndex = nil
         isCloseHovered = false
+        isToggleHovered = false
         needsDisplay = true
     }
 
-    func add(fileURL: URL) {
-        guard !files.contains(fileURL) else { return }
-        files.append(fileURL)
+    func add(fileURLs newFileURLs: [URL]) {
+        var added = false
+        for fileURL in newFileURLs where !files.contains(fileURL) {
+            files.append(fileURL)
+            added = true
+        }
+        guard added else { return }
+        refreshSize()
+    }
+
+    private func refreshSize() {
         let contentHeight = 72 + CGFloat(files.count) * rowHeight + 15
         let size = NSSize(width: panelWidth, height: max(baseHeight, contentHeight))
         setFrameSize(size)
@@ -135,7 +153,7 @@ final class StationView: NSView, NSDraggingSource {
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
         ) ?? []
-        objects.compactMap { ($0 as? NSURL)?.filePathURL }.forEach { add(fileURL: $0) }
+        add(fileURLs: objects.compactMap { ($0 as? NSURL)?.filePathURL })
         return true
     }
 
@@ -143,6 +161,11 @@ final class StationView: NSView, NSDraggingSource {
         let point = convert(event.locationInWindow, from: nil)
         if closeRect.contains(point) {
             onClose?()
+            return
+        }
+        if moveToggleRect.contains(point) {
+            isMoveMode.toggle()
+            needsDisplay = true
             return
         }
         pressedIndex = files.indices.first { rowRect(for: $0).contains(point) }
@@ -161,6 +184,7 @@ final class StationView: NSView, NSDraggingSource {
         let dy = point.y - pressPoint.y
         guard dx * dx + dy * dy >= 4 * 4 else { return }
         didStartDrag = true
+        activeDragIndex = index
         let fileURL = files[index]
         let item = NSDraggingItem(pasteboardWriter: fileURL as NSURL)
         let dragIconSize: CGFloat = 48
@@ -176,16 +200,48 @@ final class StationView: NSView, NSDraggingSource {
     }
 
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
-        .copy
+        isMoveMode ? .move : .copy
     }
 
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        // 移动模式下对方执行了移动，源文件已不在原位置，对应条目随之移除
+        if isMoveMode, operation == .move, let index = activeDragIndex, files.indices.contains(index) {
+            files.remove(at: index)
+            hoveredIndex = nil
+            refreshSize()
+        }
+        activeDragIndex = nil
         pressedIndex = nil
         didStartDrag = false
     }
 
     private var closeRect: NSRect {
         NSRect(x: bounds.width - 38, y: 17, width: 22, height: 22)
+    }
+
+    private var moveToggleRect: NSRect {
+        NSRect(x: bounds.width - 150, y: 17, width: 104, height: 22)
+    }
+
+    private func toggleSegmentRect(_ segment: Int) -> NSRect {
+        NSRect(x: moveToggleRect.minX + 3 + CGFloat(segment) * 50, y: moveToggleRect.minY + 3, width: 48, height: 16)
+    }
+
+    private func drawMoveToggle() {
+        let toggleRect = moveToggleRect
+        NSColor.white.withAlphaComponent(isToggleHovered ? 0.12 : 0.08).setFill()
+        NSBezierPath(roundedRect: toggleRect, xRadius: 11, yRadius: 11).fill()
+
+        let selected = toggleSegmentRect(isMoveMode ? 1 : 0).insetBy(dx: -1, dy: -1)
+        NSColor.white.withAlphaComponent(0.16).setFill()
+        NSBezierPath(roundedRect: selected, xRadius: 8, yRadius: 8).fill()
+
+        drawText("复制", centeredIn: toggleSegmentRect(0),
+                 font: .systemFont(ofSize: 11, weight: isMoveMode ? .regular : .semibold),
+                 color: NSColor.white.withAlphaComponent(isMoveMode ? 0.45 : 0.9))
+        drawText("移动", centeredIn: toggleSegmentRect(1),
+                 font: .systemFont(ofSize: 11, weight: isMoveMode ? .semibold : .regular),
+                 color: NSColor.white.withAlphaComponent(isMoveMode ? 0.9 : 0.45))
     }
 
     private func rowRect(for index: Int) -> NSRect {
