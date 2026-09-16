@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private let keyboardShortcuts = KeyboardShortcutMonitor()
     private let permissionItem = NSMenuItem(title: "需要辅助功能权限…", action: nil, keyEquivalent: "")
+    private lazy var settingsWindow = SettingsWindowController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
@@ -59,6 +60,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let showItem = NSMenuItem(title: "显示中转站", action: #selector(showStation), keyEquivalent: "")
         showItem.target = self
         menu.addItem(showItem)
+        let settingsItem = NSMenuItem(title: "动作设置…", action: #selector(openSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
         menu.addItem(.separator())
         let quitItem = NSMenuItem(title: "退出 DropStation", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
@@ -75,6 +79,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    @objc private func openSettings() {
+        NSApp.activate(ignoringOtherApps: true)
+        settingsWindow.reload()
+        settingsWindow.window?.center()
+        settingsWindow.showWindow(nil)
+        settingsWindow.window?.makeKeyAndOrderFront(nil)
     }
 
     @objc private func quit() {

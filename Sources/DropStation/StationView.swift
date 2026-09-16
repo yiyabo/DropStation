@@ -13,6 +13,7 @@ final class StationView: NSView, NSDraggingSource {
     private var activeDragIndex: Int?
     private var isMoveMode = false
     private var isToggleHovered = false
+    private var actionHoverIndex: Int?
     private var hoveredIndex: Int?
     private var isCloseHovered = false
     private var didStartDrag = false
@@ -75,8 +76,15 @@ final class StationView: NSView, NSDraggingSource {
             NSColor.white.withAlphaComponent(0.08).setFill()
             NSBezierPath(roundedRect: iconRect.insetBy(dx: -3, dy: -3), xRadius: 10, yRadius: 10).fill()
             icon(for: fileURL).draw(in: iconRect)
-            drawText(fileURL.lastPathComponent, at: NSPoint(x: 82, y: rect.minY + 13), font: .systemFont(ofSize: 13, weight: .medium), color: .white, maxWidth: bounds.width - 104)
+            drawText(fileURL.lastPathComponent, at: NSPoint(x: 82, y: rect.minY + 13), font: .systemFont(ofSize: 13, weight: .medium), color: .white, maxWidth: bounds.width - 136)
             drawText(fileSize(for: fileURL), at: NSPoint(x: 82, y: rect.minY + 33), font: .systemFont(ofSize: 11), color: NSColor.white.withAlphaComponent(0.5))
+
+            if hoveredIndex == index {
+                let buttonRect = actionButtonRect(for: index)
+                NSColor.white.withAlphaComponent(actionHoverIndex == index ? 0.26 : 0.14).setFill()
+                NSBezierPath(ovalIn: buttonRect).fill()
+                drawSymbol("ellipsis", centeredIn: buttonRect.insetBy(dx: 5, dy: 5), color: NSColor.white.withAlphaComponent(0.85))
+            }
         }
     }
 
@@ -95,12 +103,15 @@ final class StationView: NSView, NSDraggingSource {
         let newHoveredIndex = files.indices.first { rowRect(for: $0).contains(point) }
         let newCloseHovered = closeRect.contains(point)
         let newToggleHovered = moveToggleRect.contains(point)
+        let newActionHover = files.indices.first { actionButtonRect(for: $0).contains(point) }
         guard newHoveredIndex != hoveredIndex
                 || newCloseHovered != isCloseHovered
-                || newToggleHovered != isToggleHovered else { return }
+                || newToggleHovered != isToggleHovered
+                || newActionHover != actionHoverIndex else { return }
         hoveredIndex = newHoveredIndex
         isCloseHovered = newCloseHovered
         isToggleHovered = newToggleHovered
+        actionHoverIndex = newActionHover
         needsDisplay = true
     }
 
@@ -108,6 +119,7 @@ final class StationView: NSView, NSDraggingSource {
         hoveredIndex = nil
         isCloseHovered = false
         isToggleHovered = false
+        actionHoverIndex = nil
         needsDisplay = true
     }
 
@@ -168,11 +180,110 @@ final class StationView: NSView, NSDraggingSource {
             needsDisplay = true
             return
         }
+        if let actionIndex = files.indices.first(where: { actionButtonRect(for: $0).contains(point) }) {
+            showActionsMenu(for: actionIndex, at: point)
+            return
+        }
         pressedIndex = files.indices.first { rowRect(for: $0).contains(point) }
         pressPoint = point
         didStartDrag = false
         if pressedIndex == nil {
             window?.performDrag(with: event)
+        }
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        guard let index = files.indices.first(where: { rowRect(for: $0).contains(point) }) else { return }
+        showActionsMenu(for: index, at: point)
+    }
+
+    private func showActionsMenu(for index: Int, at point: NSPoint) {
+        guard files.indices.contains(index) else { return }
+        let menu = NSMenu()
+
+        func addItem(_ title: String, _ action: Selector) {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            item.tag = index
+            menu.addItem(item)
+        }
+
+        addItem("在访达中显示", #selector(revealInFinder(_:)))
+        addItem("复制路径", #selector(copyPath(_:)))
+        addItem("从面板移除", #selector(removeEntry(_:)))
+
+        let fileURL = files[index]
+        if FileActions.isImage(fileURL) {
+            menu.addItem(.separator())
+            addItem("压缩图片（\(ActionSettings.compressQuality)%）", #selector(compressImage(_:)))
+            addItem("调整大小（≤\(ActionSettings.resizeMaxWidth)×\(ActionSettings.resizeMaxHeight)）", #selector(resizeImage(_:)))
+            let ext = fileURL.pathExtension.lowercased()
+            if ext != "jpg", ext != "jpeg" {
+                addItem("转换为 JPEG（\(ActionSettings.convertQuality)%）", #selector(convertToJPEG(_:)))
+            }
+            if ext != "png" {
+                addItem("转换为 PNG", #selector(convertToPNG(_:)))
+            }
+        }
+
+        menu.popUp(positioning: nil, at: point, in: self)
+    }
+
+    @objc private func revealInFinder(_ sender: NSMenuItem) {
+        guard files.indices.contains(sender.tag) else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([files[sender.tag]])
+    }
+
+    @objc private func copyPath(_ sender: NSMenuItem) {
+        guard files.indices.contains(sender.tag) else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(files[sender.tag].path, forType: .string)
+    }
+
+    @objc private func removeEntry(_ sender: NSMenuItem) {
+        guard files.indices.contains(sender.tag) else { return }
+        files.remove(at: sender.tag)
+        hoveredIndex = nil
+        actionHoverIndex = nil
+        refreshSize()
+    }
+
+    @objc private func compressImage(_ sender: NSMenuItem) {
+        runImageAction(at: sender.tag) { try FileActions.compressJPEG(at: $0, qualityPercent: ActionSettings.compressQuality) }
+    }
+
+    @objc private func resizeImage(_ sender: NSMenuItem) {
+        runImageAction(at: sender.tag) { try FileActions.resize(at: $0, maxWidth: ActionSettings.resizeMaxWidth, maxHeight: ActionSettings.resizeMaxHeight) }
+    }
+
+    @objc private func convertToJPEG(_ sender: NSMenuItem) {
+        runImageAction(at: sender.tag) { try FileActions.convert(at: $0, toJPEG: true, qualityPercent: ActionSettings.convertQuality) }
+    }
+
+    @objc private func convertToPNG(_ sender: NSMenuItem) {
+        runImageAction(at: sender.tag) { try FileActions.convert(at: $0, toJPEG: false, qualityPercent: ActionSettings.convertQuality) }
+    }
+
+    /// 后台执行图片处理，成功后把面板条目就地替换为结果文件（原文件不动）
+    private func runImageAction(at index: Int, _ work: @escaping @Sendable (URL) throws -> URL) {
+        guard files.indices.contains(index) else { return }
+        let sourceURL = files[index]
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let result = Result { try work(sourceURL) }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                switch result {
+                case .success(let outputURL):
+                    // 执行期间条目可能已被移除或顺序变化，按 URL 找回再替换
+                    if let current = self.files.firstIndex(of: sourceURL) {
+                        self.files[current] = outputURL
+                        self.refreshSize()
+                    }
+                case .failure:
+                    NSSound.beep()
+                }
+            }
         }
     }
 
@@ -246,6 +357,11 @@ final class StationView: NSView, NSDraggingSource {
 
     private func rowRect(for index: Int) -> NSRect {
         NSRect(x: 18, y: 72 + CGFloat(index) * rowHeight, width: bounds.width - 36, height: rowHeight)
+    }
+
+    private func actionButtonRect(for index: Int) -> NSRect {
+        let row = rowRect(for: index)
+        return NSRect(x: row.maxX - 32, y: row.midY - 13, width: 26, height: 26)
     }
 
     private func canAccept(_ draggingInfo: NSDraggingInfo) -> Bool {
