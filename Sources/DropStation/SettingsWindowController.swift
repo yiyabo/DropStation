@@ -9,10 +9,11 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     private let maxHeightField = NSTextField()
     private let formatPopup = NSPopUpButton()
     private let convertQualityField = NSTextField()
+    private let closeRetentionPopup = NSPopUpButton()
 
     init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 380, height: 300),
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 370),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -37,6 +38,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         formatPopup.selectItem(withTitle: ActionSettings.convertFormat)
         convertQualityField.integerValue = ActionSettings.convertQuality
         convertQualityField.isEnabled = ActionSettings.convertFormat == "JPEG"
+        closeRetentionPopup.selectItem(withTitle: StationSettings.closeRetention.title)
     }
 
     private func buildContent() {
@@ -69,32 +71,41 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
             content.addSubview(field)
         }
 
-        sectionLabel("压缩图片", y: 258)
-        fieldLabel("质量", x: 36, y: 230)
-        numberField(compressQualityField, x: 116, y: 228, minimum: 1, maximum: 100)
-        fieldLabel("%（输出 JPEG）", x: 184, y: 230, width: 140)
+        sectionLabel("压缩图片", y: 328)
+        fieldLabel("质量", x: 36, y: 300)
+        numberField(compressQualityField, x: 116, y: 298, minimum: 1, maximum: 100)
+        fieldLabel("%（输出 JPEG）", x: 184, y: 300, width: 140)
 
-        sectionLabel("调整图片大小", y: 192)
-        fieldLabel("最大宽度", x: 36, y: 164)
-        numberField(maxWidthField, x: 116, y: 162, minimum: 16, maximum: 8192)
-        fieldLabel("px", x: 182, y: 164, width: 20)
-        fieldLabel("最大高度", x: 208, y: 164)
-        numberField(maxHeightField, x: 288, y: 162, minimum: 16, maximum: 8192)
-        fieldLabel("px", x: 354, y: 164, width: 20)
+        sectionLabel("调整图片大小", y: 262)
+        fieldLabel("最大宽度", x: 36, y: 234)
+        numberField(maxWidthField, x: 116, y: 232, minimum: 16, maximum: 8192)
+        fieldLabel("px", x: 182, y: 234, width: 20)
+        fieldLabel("最大高度", x: 208, y: 234)
+        numberField(maxHeightField, x: 288, y: 232, minimum: 16, maximum: 8192)
+        fieldLabel("px", x: 354, y: 234, width: 20)
 
-        sectionLabel("转换图片", y: 126)
-        fieldLabel("格式", x: 36, y: 96)
+        sectionLabel("转换图片", y: 196)
+        fieldLabel("格式", x: 36, y: 168)
         formatPopup.addItems(withTitles: ["JPEG", "PNG"])
         formatPopup.font = .systemFont(ofSize: 12)
-        formatPopup.frame = NSRect(x: 112, y: 94, width: 92, height: 26)
+        formatPopup.frame = NSRect(x: 112, y: 164, width: 92, height: 26)
         formatPopup.target = self
         formatPopup.action = #selector(formatChanged(_:))
         content.addSubview(formatPopup)
-        fieldLabel("质量", x: 224, y: 96)
-        numberField(convertQualityField, x: 268, y: 94, minimum: 1, maximum: 100)
-        fieldLabel("%", x: 334, y: 96, width: 16)
+        fieldLabel("质量", x: 224, y: 168)
+        numberField(convertQualityField, x: 268, y: 164, minimum: 1, maximum: 100)
+        fieldLabel("%", x: 334, y: 168, width: 16)
 
-        let hint = NSTextField(wrappingLabelWithString: "以上参数即时生效。右键点击面板中的文件行，或悬停后点击行尾按钮即可使用这些动作。")
+        sectionLabel("中转站副本", y: 128)
+        fieldLabel("关闭面板时", x: 36, y: 100)
+        closeRetentionPopup.addItems(withTitles: CloseRetention.allCases.map(\.title))
+        closeRetentionPopup.font = .systemFont(ofSize: 12)
+        closeRetentionPopup.frame = NSRect(x: 132, y: 94, width: 180, height: 26)
+        closeRetentionPopup.target = self
+        closeRetentionPopup.action = #selector(closeRetentionChanged(_:))
+        content.addSubview(closeRetentionPopup)
+
+        let hint = NSTextField(wrappingLabelWithString: "文件会先安全复制到 DropStation 的本地暂存副本；原始文件不受影响。参数与副本保留策略即时生效。")
         hint.font = .systemFont(ofSize: 11)
         hint.textColor = .secondaryLabelColor
         hint.frame = NSRect(x: 20, y: 22, width: 340, height: 40)
@@ -105,6 +116,10 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         let format = sender.titleOfSelectedItem ?? "JPEG"
         ActionSettings.convertFormat = format
         convertQualityField.isEnabled = format == "JPEG"
+    }
+
+    @objc private func closeRetentionChanged(_ sender: NSPopUpButton) {
+        StationSettings.closeRetention = CloseRetention.allCases.first { $0.title == sender.titleOfSelectedItem } ?? .discardImmediately
     }
 
     func controlTextDidEndEditing(_ obj: Notification) {

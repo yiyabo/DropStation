@@ -160,19 +160,18 @@ enum FileActions {
         return context.makeImage() ?? image
     }
 
-    /// 输出文件已存在时追加 -2、-3…，避免覆盖用户已有文件
+    /// 输出文件已存在时追加 -2、-3…，直到找到真正空闲的路径，避免覆盖用户已有文件
     private static func uniqueURL(_ base: URL) -> URL {
         guard FileManager.default.fileExists(atPath: base.path) else { return base }
         let directory = base.deletingLastPathComponent()
         let stem = base.deletingPathExtension().lastPathComponent
         let ext = base.pathExtension
-        for index in 2...99 {
-            let candidate = directory.appendingPathComponent("\(stem)-\(index).\(ext)")
-            if !FileManager.default.fileExists(atPath: candidate.path) {
-                return candidate
-            }
+        for index in 2...10_000 {
+            let suffix = ext.isEmpty ? "\(stem)-\(index)" : "\(stem)-\(index).\(ext)"
+            let candidate = directory.appendingPathComponent(suffix)
+            if !FileManager.default.fileExists(atPath: candidate.path) { return candidate }
         }
-        return base
+        return directory.appendingPathComponent("\(UUID().uuidString)-\(base.lastPathComponent)")
     }
 
     /// 隐藏自测入口：`DropStation --selftest <图片路径>`，验证三个动作并打印结果

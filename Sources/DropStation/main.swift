@@ -1,6 +1,7 @@
 import AppKit
 
 ActionSettings.register()
+StationSettings.register()
 
 // 隐藏自测入口：DropStation --selftest <图片路径>，验证图片处理引擎后直接退出
 if let flagIndex = CommandLine.arguments.firstIndex(of: "--selftest"),

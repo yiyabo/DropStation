@@ -49,12 +49,23 @@ final class StationWindowController: NSWindowController {
         window?.isVisible == true
     }
 
+    func prepareForLaunch() throws {
+        try stationView.prepareForLaunch()
+    }
+
     func add(fileURLs: [URL]) {
         stationView.add(fileURLs: fileURLs)
     }
 
+    func dismissStation() {
+        stationView.willDismiss()
+        window?.orderOut(nil)
+        onVisibilityChange?(false)
+    }
+
     func show(near point: NSPoint) {
         guard let window else { return }
+        stationView.willShow()
         onVisibilityChange?(true)
         let size = window.frame.size
         var origin = window.frame.origin
@@ -114,11 +125,5 @@ final class StationWindowController: NSWindowController {
             frame.origin.y = visibleFrame.minY
         }
         window.setFrame(frame, display: true)
-    }
-
-    func dismissStation() {
-        stationView.removeAll()
-        window?.orderOut(nil)
-        onVisibilityChange?(false)
     }
 }

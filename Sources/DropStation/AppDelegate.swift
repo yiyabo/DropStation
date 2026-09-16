@@ -12,6 +12,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
+        StationSettings.register()
+        do {
+            try station.prepareForLaunch()
+        } catch {
+            NSLog("DropStation staging initialization failed: %@", error.localizedDescription)
+        }
 
         if !AXIsProcessTrusted() {
             let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
