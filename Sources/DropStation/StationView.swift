@@ -149,7 +149,6 @@ final class StationView: NSView, NSDraggingSource {
     }
 
     func add(fileURLs sourceURLs: [URL]) {
-        guard isAcceptingFiles else { return }
         var seen = Set<URL>()
         let uniqueSources = sourceURLs.map(\.standardizedFileURL).filter { seen.insert($0).inserted }
         guard !uniqueSources.isEmpty else { return }
@@ -189,35 +188,7 @@ final class StationView: NSView, NSDraggingSource {
         let pasteboard = draggingInfo.draggingPasteboard
         let receivers = pasteboard.readObjects(forClasses: [NSFilePromiseReceiver.self], options: nil) as? [NSFilePromiseReceiver] ?? []
         if !receivers.isEmpty {
-            guard let destination = try? stagingStore.promiseReceivingDirectory() else {
-                lastImportError = "无法创建接收目录"
-                needsDisplay = true
-                return false
-            }
-            let queue = OperationQueue()
-            queue.qualityOfService = .userInitiated
-            let batchID = UUID()
-            pendingImports.insert(batchID)
-            needsDisplay = true
-            var remaining = receivers.count
-            for receiver in receivers {
-                receiver.receivePromisedFiles(atDestination: destination, options: [:], operationQueue: queue) { [weak self] fileURL, error in
-                    Task { @MainActor [weak self] in
-                        guard let self else { return }
-                        if let error {
-                            NSLog("DropStation promise import failed: %@", error.localizedDescription)
-                            self.lastImportError = "来源文件提供失败"
-                        } else {
-                            self.add(fileURLs: [fileURL])
-                        }
-                        remaining -= 1
-                        if remaining == 0 {
-                            self.pendingImports.remove(batchID)
-                            self.needsDisplay = true
-                        }
-                    }
-                }
-            }
+            add(promiseReceivers: receivers)
             return true
         }
 
@@ -226,6 +197,40 @@ final class StationView: NSView, NSDraggingSource {
         guard !urls.isEmpty else { return false }
         add(fileURLs: urls)
         return true
+    }
+
+    /// 面板拖入与晃动导入共用的 promise 接收入口：先让来源把文件落到接收目录，再统一交给暂存流程
+    func add(promiseReceivers receivers: [NSFilePromiseReceiver]) {
+        guard !receivers.isEmpty else { return }
+        guard let destination = try? stagingStore.promiseReceivingDirectory() else {
+            lastImportError = "无法创建接收目录"
+            needsDisplay = true
+            return
+        }
+        let queue = OperationQueue()
+        queue.qualityOfService = .userInitiated
+        let batchID = UUID()
+        pendingImports.insert(batchID)
+        needsDisplay = true
+        var remaining = receivers.count
+        for receiver in receivers {
+            receiver.receivePromisedFiles(atDestination: destination, options: [:], operationQueue: queue) { [weak self] fileURL, error in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    if let error {
+                        NSLog("DropStation promise import failed: %@", error.localizedDescription)
+                        self.lastImportError = "来源文件提供失败"
+                    } else {
+                        self.add(fileURLs: [fileURL])
+                    }
+                    remaining -= 1
+                    if remaining == 0 {
+                        self.pendingImports.remove(batchID)
+                        self.needsDisplay = true
+                    }
+                }
+            }
+        }
     }
 
     override func mouseDown(with event: NSEvent) {

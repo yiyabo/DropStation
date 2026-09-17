@@ -57,6 +57,10 @@ final class StationWindowController: NSWindowController {
         stationView.add(fileURLs: fileURLs)
     }
 
+    func add(promiseReceivers: [NSFilePromiseReceiver]) {
+        stationView.add(promiseReceivers: promiseReceivers)
+    }
+
     func dismissStation() {
         stationView.willDismiss()
         window?.orderOut(nil)

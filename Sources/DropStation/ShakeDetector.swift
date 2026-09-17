@@ -3,6 +3,7 @@ import AppKit
 @MainActor
 final class ShakeDetector {
     var onShake: (([URL]) -> Void)?
+    var onShakePromise: (([NSFilePromiseReceiver]) -> Void)?
 
     private var globalMonitor: Any?
     private var localMonitor: Any?
@@ -77,10 +78,11 @@ final class ShakeDetector {
     private var hasDraggedFile: Bool {
         let pasteboard = NSPasteboard(name: .drag)
         guard pasteboard.changeCount > dragChangeCountBaseline else { return false }
-        return pasteboard.canReadObject(
+        let hasFileURLs = pasteboard.canReadObject(
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
         )
+        return hasFileURLs || pasteboard.canReadObject(forClasses: [NSFilePromiseReceiver.self], options: nil)
     }
 
     private func updateDirection(with point: NSPoint, timestamp: TimeInterval) {
@@ -121,6 +123,15 @@ final class ShakeDetector {
     }
 
     private func trigger() {
+        // 微信等应用通过 file promise 提供文件：优先走 promise 接收，让来源安全落地；
+        // 普通拖拽（Finder 等）没有 promise，回退到直接读文件 URL。
+        let pasteboard = NSPasteboard(name: .drag)
+        let receivers = pasteboard.readObjects(forClasses: [NSFilePromiseReceiver.self], options: nil) as? [NSFilePromiseReceiver] ?? []
+        if !receivers.isEmpty {
+            hasTriggered = true
+            onShakePromise?(receivers)
+            return
+        }
         let fileURLs = draggedFileURLs
         guard !fileURLs.isEmpty else { return }
         hasTriggered = true

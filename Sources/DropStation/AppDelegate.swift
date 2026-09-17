@@ -40,6 +40,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.station.add(fileURLs: fileURLs)
             self.station.show(near: NSEvent.mouseLocation)
         }
+        shakeDetector.onShakePromise = { [weak self] receivers in
+            guard let self else { return }
+            self.station.add(promiseReceivers: receivers)
+            self.station.show(near: NSEvent.mouseLocation)
+        }
 
         shakeDetector.start()
     }
