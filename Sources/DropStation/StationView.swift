@@ -166,6 +166,9 @@ final class StationView: NSView, NSDraggingSource {
             }
             files.append(contentsOf: batch.items)
             lastImportError = batch.failures.isEmpty ? nil : "无法读取部分来源文件"
+            if !batch.failures.isEmpty {
+                NSLog("DropStation stage failures: %@", batch.failures.map { "\($0.sourceURL.lastPathComponent): \($0.message)" }.joined(separator: "; "))
+            }
             refreshSize()
             if !batch.failures.isEmpty { NSSound.beep() }
         }
@@ -184,40 +187,44 @@ final class StationView: NSView, NSDraggingSource {
 
     override func performDragOperation(_ draggingInfo: NSDraggingInfo) -> Bool {
         let pasteboard = draggingInfo.draggingPasteboard
-        let objects = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) ?? []
-        let urls = objects.compactMap { ($0 as? NSURL)?.filePathURL }
-        if !urls.isEmpty {
-            add(fileURLs: urls)
-            return true
-        }
-
         let receivers = pasteboard.readObjects(forClasses: [NSFilePromiseReceiver.self], options: nil) as? [NSFilePromiseReceiver] ?? []
-        guard !receivers.isEmpty, let destination = try? stagingStore.promiseReceivingDirectory() else { return false }
-        let queue = OperationQueue()
-        queue.qualityOfService = .userInitiated
-        pendingImports.insert(UUID())
-        for receiver in receivers {
-            receiver.receivePromisedFiles(atDestination: destination, options: [:], operationQueue: queue) { [weak self] fileURL, error in
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    if error == nil {
-                        self.add(fileURLs: [fileURL])
-                    } else {
-                        self.lastImportError = "无法读取微信临时文件"
-                        self.needsDisplay = true
-                        NSSound.beep()
+        if !receivers.isEmpty {
+            guard let destination = try? stagingStore.promiseReceivingDirectory() else {
+                lastImportError = "无法创建接收目录"
+                needsDisplay = true
+                return false
+            }
+            let queue = OperationQueue()
+            queue.qualityOfService = .userInitiated
+            let batchID = UUID()
+            pendingImports.insert(batchID)
+            needsDisplay = true
+            var remaining = receivers.count
+            for receiver in receivers {
+                receiver.receivePromisedFiles(atDestination: destination, options: [:], operationQueue: queue) { [weak self] fileURL, error in
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        if let error {
+                            NSLog("DropStation promise import failed: %@", error.localizedDescription)
+                            self.lastImportError = "来源文件提供失败"
+                        } else {
+                            self.add(fileURLs: [fileURL])
+                        }
+                        remaining -= 1
+                        if remaining == 0 {
+                            self.pendingImports.remove(batchID)
+                            self.needsDisplay = true
+                        }
                     }
                 }
             }
+            return true
         }
-        queue.addBarrierBlock { [weak self] in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                self.pendingImports.removeAll()
-                self.stagingStore.removeIncomingDirectory(destination)
-                self.needsDisplay = true
-            }
-        }
+
+        let objects = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) ?? []
+        let urls = objects.compactMap { ($0 as? NSURL)?.filePathURL }
+        guard !urls.isEmpty else { return false }
+        add(fileURLs: urls)
         return true
     }
 
@@ -354,7 +361,9 @@ final class StationView: NSView, NSDraggingSource {
 
     private func rowRect(for index: Int) -> NSRect { NSRect(x: 18, y: 72 + CGFloat(index) * rowHeight, width: bounds.width - 36, height: rowHeight) }
     private func actionButtonRect(for index: Int) -> NSRect { let row = rowRect(for: index); return NSRect(x: row.maxX - 32, y: row.midY - 13, width: 26, height: 26) }
-    private func canAccept(_ info: NSDraggingInfo) -> Bool { info.draggingPasteboard.canReadObject(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) }
+    private func canAccept(_ info: NSDraggingInfo) -> Bool {
+        info.draggingPasteboard.canReadObject(forClasses: [NSURL.self, NSFilePromiseReceiver.self], options: [.urlReadingFileURLsOnly: true])
+    }
 
     private func icon(for url: URL) -> NSImage {
         if let cached = iconCache[url] { return cached }

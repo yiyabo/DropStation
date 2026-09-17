@@ -177,7 +177,14 @@ final class StagingStore {
         let pathExtension = URL(fileURLWithPath: originalName).pathExtension
         let stem = URL(fileURLWithPath: originalName).deletingPathExtension().lastPathComponent
         for index in 1...10_000 {
-            let name = index == 1 ? originalName : "\(stem)-\(index).\(pathExtension)"
+            let name: String
+            if index == 1 {
+                name = originalName
+            } else if pathExtension.isEmpty {
+                name = "\(stem)-\(index)"
+            } else {
+                name = "\(stem)-\(index).\(pathExtension)"
+            }
             if !FileManager.default.fileExists(atPath: root.appendingPathComponent(name).path) { return name }
         }
         return "\(UUID().uuidString)-\(originalName)"
@@ -188,10 +195,11 @@ final class StagingStore {
     }
 
     private nonisolated static func copy(source: URL, to root: URL) throws -> StagedItem {
-        let hasSecurityScope = source.startAccessingSecurityScopedResource()
+        let isIncoming = source.deletingLastPathComponent().lastPathComponent.hasPrefix(".incoming-")
+        let hasSecurityScope = !isIncoming && source.startAccessingSecurityScopedResource()
         defer { if hasSecurityScope { source.stopAccessingSecurityScopedResource() } }
 
-        let values = try source.resourceValues(forKeys: [.isReadableKey, .isSymbolicLinkKey, .nameKey])
+        let values = try source.resourceValues(forKeys: [.isReadableKey, .isSymbolicLinkKey, .isDirectoryKey, .nameKey])
         guard values.isReadable == true else { throw CocoaError(.fileReadNoPermission) }
         guard values.isSymbolicLink != true else { throw CocoaError(.fileReadUnsupportedScheme) }
         if values.isDirectory != true {
@@ -203,16 +211,27 @@ final class StagingStore {
         let originalName = values.name ?? source.lastPathComponent
         let targetName = uniqueName(originalName, in: root)
         let target = root.appendingPathComponent(targetName)
-        var coordinationError: NSError?
-        var copyError: Error?
-        NSFileCoordinator().coordinate(readingItemAt: source, options: [], error: &coordinationError) { coordinatedSource in
-            do { try FileManager.default.copyItem(at: coordinatedSource, to: target) }
-            catch { copyError = error }
-        }
-        if let coordinationError { throw coordinationError }
-        if let copyError {
-            try? FileManager.default.removeItem(at: target)
-            throw copyError
+
+        if isIncoming {
+            do {
+                try FileManager.default.moveItem(at: source, to: target)
+                try? FileManager.default.removeItem(at: source.deletingLastPathComponent())
+            } catch {
+                try? FileManager.default.removeItem(at: target)
+                throw error
+            }
+        } else {
+            var coordinationError: NSError?
+            var copyError: Error?
+            NSFileCoordinator().coordinate(readingItemAt: source, options: [], error: &coordinationError) { coordinatedSource in
+                do { try FileManager.default.copyItem(at: coordinatedSource, to: target) }
+                catch { copyError = error }
+            }
+            if let coordinationError { throw coordinationError }
+            if let copyError {
+                try? FileManager.default.removeItem(at: target)
+                throw copyError
+            }
         }
         return StagedItem(id: id, relativePath: targetName, displayName: originalName, createdAt: Date())
     }
