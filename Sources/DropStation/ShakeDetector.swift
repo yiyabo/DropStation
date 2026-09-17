@@ -128,6 +128,7 @@ final class ShakeDetector {
         // 微信等应用通过 file promise 提供文件：优先走 promise 接收，让来源安全落地；
         // 普通拖拽（Finder 等）没有 promise，回退到直接读文件 URL。
         let pasteboard = NSPasteboard(name: .drag)
+        DebugLog.write("shake trigger, pasteboard types=\(pasteboard.types ?? [])")
         let receivers = pasteboard.readObjects(forClasses: [NSFilePromiseReceiver.self], options: nil) as? [NSFilePromiseReceiver] ?? []
         if !receivers.isEmpty {
             hasTriggered = true

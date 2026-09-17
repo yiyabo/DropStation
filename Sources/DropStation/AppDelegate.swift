@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private let keyboardShortcuts = KeyboardShortcutMonitor()
     private let permissionItem = NSMenuItem(title: "需要辅助功能权限…", action: nil, keyEquivalent: "")
+    private let diskAccessItem = NSMenuItem(title: "完全磁盘访问权限…", action: nil, keyEquivalent: "")
     private lazy var settingsWindow = SettingsWindowController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -70,6 +71,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         permissionItem.action = #selector(openAccessibilitySettings)
         permissionItem.target = self
         menu.addItem(permissionItem)
+        diskAccessItem.action = #selector(openFullDiskSettings)
+        diskAccessItem.target = self
+        menu.addItem(diskAccessItem)
         menu.addItem(.separator())
         let showItem = NSMenuItem(title: "显示中转站", action: #selector(showStation), keyEquivalent: "")
         showItem.target = self
@@ -91,6 +95,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openAccessibilitySettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    @objc private func openFullDiskSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
             NSWorkspace.shared.open(url)
         }
     }

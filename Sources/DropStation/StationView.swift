@@ -164,10 +164,29 @@ final class StationView: NSView, NSDraggingSource {
                 return
             }
             files.append(contentsOf: batch.items)
-            lastImportError = batch.failures.isEmpty ? nil : "无法读取部分来源文件"
             if !batch.failures.isEmpty {
-                NSLog("DropStation stage failures: %@", batch.failures.map { "\($0.sourceURL.lastPathComponent): \($0.message)" }.joined(separator: "; "))
+                let detail = batch.failures.map { "\($0.sourceURL.lastPathComponent): \($0.message)" }.joined(separator: "; ")
+                NSLog("DropStation stage failures: %@", detail)
+                DebugLog.write("stage failures: \(detail)")
             }
+            // URL 暂存全部失败（如微信容器路径在探测后、复制前被系统拒绝）时，
+            // 拖拽粘贴板内容仍在，回退到取其中的位图数据自己落成文件。
+            // incoming 目录内的文件不再二次回退，避免循环。
+            if batch.items.isEmpty, !batch.failures.isEmpty,
+               uniqueSources.first?.deletingLastPathComponent().lastPathComponent.hasPrefix(".incoming-") == false,
+               let image = PasteboardImage.payload(from: NSPasteboard(name: .drag)) {
+                DebugLog.write("url staging failed, falling back to pasteboard image")
+                lastImportError = nil
+                refreshSize()
+                add(imageData: image.data, fileExtension: image.fileExtension,
+                    suggestedName: uniqueSources.first?.deletingPathExtension().lastPathComponent)
+                return
+            }
+            // 微信等沙盒应用的容器文件被 macOS 系统级保护：提示用户授予完全磁盘访问权限
+            let blockedByContainer = batch.failures.contains { $0.sourceURL.path.contains("/Library/Containers/") }
+            lastImportError = batch.failures.isEmpty ? nil
+                : blockedByContainer ? "需授予完全磁盘访问权限（见菜单栏）"
+                : "无法读取部分来源文件"
             refreshSize()
             if !batch.failures.isEmpty { NSSound.beep() }
         }
@@ -186,6 +205,7 @@ final class StationView: NSView, NSDraggingSource {
 
     override func performDragOperation(_ draggingInfo: NSDraggingInfo) -> Bool {
         let pasteboard = draggingInfo.draggingPasteboard
+        DebugLog.write("drop, pasteboard types=\(pasteboard.types ?? [])")
         let receivers = pasteboard.readObjects(forClasses: [NSFilePromiseReceiver.self], options: nil) as? [NSFilePromiseReceiver] ?? []
         if !receivers.isEmpty {
             add(promiseReceivers: receivers)
@@ -230,6 +250,7 @@ final class StationView: NSView, NSDraggingSource {
             add(fileURLs: [fileURL])
         } catch {
             NSLog("DropStation image import failed: %@", error.localizedDescription)
+            DebugLog.write("image import failed: \(error.localizedDescription)")
             lastImportError = "无法保存来源图片"
             needsDisplay = true
         }
@@ -255,6 +276,7 @@ final class StationView: NSView, NSDraggingSource {
                     guard let self else { return }
                     if let error {
                         NSLog("DropStation promise import failed: %@", error.localizedDescription)
+                        DebugLog.write("promise import failed: \(error.localizedDescription)")
                         self.lastImportError = "来源文件提供失败"
                     } else {
                         self.add(fileURLs: [fileURL])
