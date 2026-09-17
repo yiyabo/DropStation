@@ -82,4 +82,6 @@ hdiutil convert "$RW_DMG" -format UDZO -imagekey zlib-level=9 -o "$FINAL_DMG" >/
 rm -f "$RW_DMG"
 rm -rf "$STAGING"
 
+shasum -a 256 "$FINAL_DMG" > "$FINAL_DMG.sha256"
+
 printf '已生成 %s\n' "$FINAL_DMG"

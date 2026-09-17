@@ -25,7 +25,9 @@
 1. 应用无 Developer ID 签名，若被 Gatekeeper 拦截：到「系统设置 → 隐私与安全性」点击「仍要打开」。
 2. DropStation 启动时不会自动请求辅助功能权限。需要晃动暂存或全局快捷键时，打开菜单栏图标并点击「需要辅助功能权限…」，再在「系统设置 → 隐私与安全性 → 辅助功能」中授权。
 
-从源码构建：`git clone` 后运行 `./create-dmg.sh` 生成 DMG（需要 `pip install Pillow`）；或 `./build-app.sh` 只构建应用本体。
+安装后应用会绑定本仓库自动检查更新：启动时静默检查一次，也可通过菜单栏「检查更新…」手动检查；发现新版本 DMG 后一键下载、SHA256 校验、替换并重启。
+
+从源码构建：`git clone` 后运行 `./create-dmg.sh` 生成 DMG 与 `.sha256` 校验和（需要 `pip install Pillow`）；或 `./build-app.sh` 只构建应用本体。维护者可用 `./release.sh v0.3.0 "更新说明"` 一键出包并创建 GitHub Release。
 
 ## 社区
 
