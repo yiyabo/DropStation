@@ -139,6 +139,16 @@ final class StagingStore {
         removeAll(items)
     }
 
+    func promiseReceivingDirectory() throws -> URL {
+        let directory = Self.root.appendingPathComponent(".incoming-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
+    func removeIncomingDirectory(_ directory: URL) {
+        try? fileManager.removeItem(at: directory)
+    }
+
     private func loadManifest() throws -> [StagedItem] {
         let manifest = Self.root.appendingPathComponent(Self.manifestName)
         guard fileManager.fileExists(atPath: manifest.path) else { return [] }
@@ -184,6 +194,10 @@ final class StagingStore {
         let values = try source.resourceValues(forKeys: [.isReadableKey, .isSymbolicLinkKey, .nameKey])
         guard values.isReadable == true else { throw CocoaError(.fileReadNoPermission) }
         guard values.isSymbolicLink != true else { throw CocoaError(.fileReadUnsupportedScheme) }
+        if values.isDirectory != true {
+            let probe = try FileHandle(forReadingFrom: source)
+            try probe.close()
+        }
 
         let id = UUID()
         let originalName = values.name ?? source.lastPathComponent

@@ -19,10 +19,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSLog("DropStation staging initialization failed: %@", error.localizedDescription)
         }
 
-        if !AXIsProcessTrusted() {
-            let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
-            AXIsProcessTrustedWithOptions(options)
-        }
+        // 启动时只检查权限，不主动弹出系统授权对话框；用户可从菜单栏入口手动打开设置。
+        _ = AXIsProcessTrusted()
 
         keyboardShortcuts.onClose = { [weak self] in
             guard let self, self.station.isVisible else { return }

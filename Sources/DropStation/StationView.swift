@@ -11,6 +11,7 @@ final class StationView: NSView, NSDraggingSource {
     private var fileSizeCache: [URL: String] = [:]
     private var pendingImports: Set<UUID> = []
     private var isAcceptingFiles = true
+    private var lastImportError: String?
     private var pressedID: UUID?
     private var pressPoint = NSPoint.zero
     private var activeDragID: UUID?
@@ -30,7 +31,7 @@ final class StationView: NSView, NSDraggingSource {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        registerForDraggedTypes([.fileURL])
+        registerForDraggedTypes([.fileURL] + NSFilePromiseReceiver.readableDraggedTypes.map { NSPasteboard.PasteboardType($0) })
         wantsLayer = true
     }
 
@@ -85,7 +86,14 @@ final class StationView: NSView, NSDraggingSource {
             NSColor.white.withAlphaComponent(0.055).setFill()
             NSBezierPath(roundedRect: dropRect, xRadius: 16, yRadius: 16).fill()
             drawSymbol("arrow.down", centeredIn: NSRect(x: dropRect.midX - 15, y: dropRect.midY - 28, width: 30, height: 30), color: NSColor.white.withAlphaComponent(0.72))
-            let hint = pendingImports.isEmpty ? "晃动正在拖动的文件，或拖到这里" : "正在安全暂存 \(pendingImports.count) 个文件…"
+            let hint: String
+            if !pendingImports.isEmpty {
+                hint = "正在安全暂存 \(pendingImports.count) 个文件…"
+            } else if let lastImportError {
+                hint = lastImportError
+            } else {
+                hint = "晃动正在拖动的文件，或拖到这里"
+            }
             drawText(hint, centeredIn: NSRect(x: dropRect.minX, y: dropRect.midY + 18, width: dropRect.width, height: 22), font: .systemFont(ofSize: 12), color: NSColor.white.withAlphaComponent(0.7))
             return
         }
@@ -147,6 +155,7 @@ final class StationView: NSView, NSDraggingSource {
         guard !uniqueSources.isEmpty else { return }
         let batchID = UUID()
         pendingImports.insert(batchID)
+        lastImportError = nil
         needsDisplay = true
         Task {
             let batch = await stagingStore.stage(uniqueSources)
@@ -156,6 +165,7 @@ final class StationView: NSView, NSDraggingSource {
                 return
             }
             files.append(contentsOf: batch.items)
+            lastImportError = batch.failures.isEmpty ? nil : "无法读取部分来源文件"
             refreshSize()
             if !batch.failures.isEmpty { NSSound.beep() }
         }
@@ -173,8 +183,41 @@ final class StationView: NSView, NSDraggingSource {
     override func draggingUpdated(_ draggingInfo: NSDraggingInfo) -> NSDragOperation { canAccept(draggingInfo) ? .copy : [] }
 
     override func performDragOperation(_ draggingInfo: NSDraggingInfo) -> Bool {
-        let objects = draggingInfo.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) ?? []
-        add(fileURLs: objects.compactMap { ($0 as? NSURL)?.filePathURL })
+        let pasteboard = draggingInfo.draggingPasteboard
+        let objects = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) ?? []
+        let urls = objects.compactMap { ($0 as? NSURL)?.filePathURL }
+        if !urls.isEmpty {
+            add(fileURLs: urls)
+            return true
+        }
+
+        let receivers = pasteboard.readObjects(forClasses: [NSFilePromiseReceiver.self], options: nil) as? [NSFilePromiseReceiver] ?? []
+        guard !receivers.isEmpty, let destination = try? stagingStore.promiseReceivingDirectory() else { return false }
+        let queue = OperationQueue()
+        queue.qualityOfService = .userInitiated
+        pendingImports.insert(UUID())
+        for receiver in receivers {
+            receiver.receivePromisedFiles(atDestination: destination, options: [:], operationQueue: queue) { [weak self] fileURL, error in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    if error == nil {
+                        self.add(fileURLs: [fileURL])
+                    } else {
+                        self.lastImportError = "无法读取微信临时文件"
+                        self.needsDisplay = true
+                        NSSound.beep()
+                    }
+                }
+            }
+        }
+        queue.addBarrierBlock { [weak self] in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.pendingImports.removeAll()
+                self.stagingStore.removeIncomingDirectory(destination)
+                self.needsDisplay = true
+            }
+        }
         return true
     }
 
