@@ -45,6 +45,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.station.add(promiseReceivers: receivers)
             self.station.show(near: NSEvent.mouseLocation)
         }
+        shakeDetector.onShakeImage = { [weak self] data, ext, name in
+            guard let self else { return }
+            self.station.add(imageData: data, fileExtension: ext, suggestedName: name)
+            self.station.show(near: NSEvent.mouseLocation)
+        }
 
         shakeDetector.start()
     }

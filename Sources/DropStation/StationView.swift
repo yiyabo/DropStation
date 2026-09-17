@@ -194,9 +194,45 @@ final class StationView: NSView, NSDraggingSource {
 
         let objects = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) ?? []
         let urls = objects.compactMap { ($0 as? NSURL)?.filePathURL }
+        // 微信图片查看器给的是无法真实打开的容器路径：探测可读性，读不了就取粘贴板位图
+        if let first = urls.first, Self.probeReadable(first) {
+            add(fileURLs: urls)
+            return true
+        }
+        if let image = PasteboardImage.payload(from: pasteboard) {
+            add(imageData: image.data, fileExtension: image.fileExtension,
+                suggestedName: urls.first?.deletingPathExtension().lastPathComponent)
+            return true
+        }
+
         guard !urls.isEmpty else { return false }
         add(fileURLs: urls)
         return true
+    }
+
+    private static func probeReadable(_ url: URL) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        try? handle.close()
+        return true
+    }
+
+    /// 把粘贴板里的位图数据写入接收目录，随后走统一的暂存流程
+    func add(imageData: Data, fileExtension ext: String, suggestedName: String?) {
+        guard let directory = try? stagingStore.promiseReceivingDirectory() else {
+            lastImportError = "无法创建接收目录"
+            needsDisplay = true
+            return
+        }
+        let stem = (suggestedName?.isEmpty == false) ? suggestedName! : "拖入图片-\(Int(Date().timeIntervalSince1970))"
+        let fileURL = directory.appendingPathComponent("\(stem).\(ext)")
+        do {
+            try imageData.write(to: fileURL)
+            add(fileURLs: [fileURL])
+        } catch {
+            NSLog("DropStation image import failed: %@", error.localizedDescription)
+            lastImportError = "无法保存来源图片"
+            needsDisplay = true
+        }
     }
 
     /// 面板拖入与晃动导入共用的 promise 接收入口：先让来源把文件落到接收目录，再统一交给暂存流程
@@ -368,6 +404,7 @@ final class StationView: NSView, NSDraggingSource {
     private func actionButtonRect(for index: Int) -> NSRect { let row = rowRect(for: index); return NSRect(x: row.maxX - 32, y: row.midY - 13, width: 26, height: 26) }
     private func canAccept(_ info: NSDraggingInfo) -> Bool {
         info.draggingPasteboard.canReadObject(forClasses: [NSURL.self, NSFilePromiseReceiver.self], options: [.urlReadingFileURLsOnly: true])
+            || PasteboardImage.hasImageData(info.draggingPasteboard)
     }
 
     private func icon(for url: URL) -> NSImage {

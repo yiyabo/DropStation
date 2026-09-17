@@ -61,6 +61,10 @@ final class StationWindowController: NSWindowController {
         stationView.add(promiseReceivers: promiseReceivers)
     }
 
+    func add(imageData: Data, fileExtension ext: String, suggestedName: String?) {
+        stationView.add(imageData: imageData, fileExtension: ext, suggestedName: suggestedName)
+    }
+
     func dismissStation() {
         stationView.willDismiss()
         window?.orderOut(nil)

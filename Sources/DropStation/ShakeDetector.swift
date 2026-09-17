@@ -4,6 +4,7 @@ import AppKit
 final class ShakeDetector {
     var onShake: (([URL]) -> Void)?
     var onShakePromise: (([NSFilePromiseReceiver]) -> Void)?
+    var onShakeImage: ((Data, String, String?) -> Void)?
 
     private var globalMonitor: Any?
     private var localMonitor: Any?
@@ -82,7 +83,8 @@ final class ShakeDetector {
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
         )
-        return hasFileURLs || pasteboard.canReadObject(forClasses: [NSFilePromiseReceiver.self], options: nil)
+        let hasPromises = pasteboard.canReadObject(forClasses: [NSFilePromiseReceiver.self], options: nil)
+        return hasFileURLs || hasPromises || PasteboardImage.hasImageData(pasteboard)
     }
 
     private func updateDirection(with point: NSPoint, timestamp: TimeInterval) {
@@ -132,10 +134,31 @@ final class ShakeDetector {
             onShakePromise?(receivers)
             return
         }
+
         let fileURLs = draggedFileURLs
+        // 微信图片查看器会给一个无法真实打开的容器路径：先探测可读性，
+        // 读不了就改取粘贴板里的位图数据，自己落成暂存文件。
+        if let first = fileURLs.first, Self.probeReadable(first) {
+            hasTriggered = true
+            onShake?(fileURLs)
+            return
+        }
+        if let image = PasteboardImage.payload(from: pasteboard) {
+            hasTriggered = true
+            let name = fileURLs.first?.deletingPathExtension().lastPathComponent
+            onShakeImage?(image.data, image.fileExtension, name)
+            return
+        }
+
         guard !fileURLs.isEmpty else { return }
         hasTriggered = true
         onShake?(fileURLs)
+    }
+
+    private static func probeReadable(_ url: URL) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        try? handle.close()
+        return true
     }
 
     private var draggedFileURLs: [URL] {
